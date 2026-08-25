@@ -6,16 +6,16 @@ A reusable platform with independently deployable Runtime and Experience applica
 
 ```text
 scheduling-platform/
-├─ apps/
-│  ├─ runtime/
-│  └─ experience/
-│     ├─ server/
-│     └─ web/
-├─ packages/
-│  └─ contracts/
-├─ docs/
-│  └─ designs/
-└─ deploy/
+├─ runtime/
+│  └─ docs/
+│     └─ 02-designs/
+├─ experience/
+│  ├─ server/
+│  ├─ web/
+│  └─ docs/
+│     └─ 02-designs/
+├─ contracts/
+└─ infrastructure/
 ```
 
 ## Architectural Boundaries
@@ -33,4 +33,4 @@ Repository topology follows accepted ADR-GLB-009 in the Scnehaux architecture re
 
 ## Status
 
-Repository scaffold only. Implementation starts after the corresponding TDD baseline is established.
+Repository structure is established. Runtime and Experience implementation starts only after their respective TDD baselines are established.
