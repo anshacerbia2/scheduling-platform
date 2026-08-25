@@ -1,0 +1,25 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Go
+bin/
+coverage.out
+*.test
+
+# Node / frontend
+node_modules/
+dist/
+build/
+coverage/
+.pnpm-store/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
