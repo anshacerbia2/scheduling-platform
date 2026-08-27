@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-001
   title: Schedule Lifecycle and Temporal Engine
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Schedule Lifecycle and Temporal Engine
 
@@ -56,6 +56,21 @@ Due Runner
 `CANCELLED` and `COMPLETED` are terminal. A recurring Schedule normally remains `ACTIVE`; a one-time Schedule becomes `COMPLETED` after its only Occurrence is materialized. Pause preserves the recurrence definition and current version while preventing future materialization.
 
 Every semantic mutation increments `schedule_version`. Pure metadata that does not alter scheduling behavior is stored separately and does not silently change the temporal version.
+
+### Authoritative State Transition Contract
+
+| Current | Event | Next | Guard |
+| --- | --- | --- | --- |
+| none | create | `ACTIVE` | valid temporal spec and admitted target |
+| `ACTIVE` | pause | `PAUSED` | expected version matches |
+| `PAUSED` | resume | `ACTIVE` or `COMPLETED` | persisted misfire policy applied |
+| `ACTIVE` | semantic update | `ACTIVE` | only future non-materialized occurrences affected |
+| `PAUSED` | semantic update | `PAUSED` | no occurrence materialization |
+| `ACTIVE`/`PAUSED` | cancel | `CANCELLED` | expected version matches |
+| `ACTIVE` one-time | materialize occurrence | `COMPLETED` | materialization transaction commits |
+| `COMPLETED`/`CANCELLED` | any mutation | rejected | terminal |
+
+Duplicate no-op commands may return current state only when idempotency proves semantic equivalence and MUST NOT increment `schedule_version`. Pause, update, cancel, and materialization serialize through the same Schedule row lock.
 
 ## Data Model
 

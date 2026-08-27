@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-004
   title: Scheduling Outbox and Dispatch Runtime
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Scheduling Outbox and Dispatch Runtime
 
@@ -46,7 +46,7 @@ Outbox rows use the state machine:
 
 `PENDING -> IN_FLIGHT -> ACCEPTED`
 
-`IN_FLIGHT -> PENDING` occurs only after a lease expires or a retriable pre-acceptance failure is recorded.
+`IN_FLIGHT -> PENDING` occurs after lease expiry or a known retriable failure. `IN_FLIGHT -> PARKED` occurs for poison, invalid-contract, permanently unroutable, or administratively blocked publication. `PARKED` is durable operator-attention state excluded from normal relay claims. Governed redrive creates a new publication intent for the same `occurrence_id` and preserves the parked row as evidence.
 
 Dispatch attempt evidence stores `attempt_no`, adapter profile, started/finished timestamps, normalized outcome, and safe error class. Occurrence `dispatch_state` becomes `ACCEPTED` only in the same local transaction that marks its outbox record accepted.
 
@@ -114,13 +114,25 @@ Relay claim:
 3. Publish outside the DB transaction
 4. On durable acceptance, mark outbox and Occurrence accepted
 5. On known retriable pre-acceptance failure, schedule exponential backoff with full jitter
-6. On poison/configuration failure, park and alert
+6. On poison/permanent contract/configuration failure, atomically mark outbox and Occurrence `PARKED`, persist a stable reason code, and alert
 
 Backoff starts at 250 ms, doubles to 30 s, and is capped; adapter-specific broker reconnect behavior remains below the port.
 
 RabbitMQ publisher returns/negative confirms are failure. Kafka producer errors before required acknowledgement are failure. Direct 2xx is accepted only for a target contract that guarantees durable deduplicated acceptance.
 
 Replay creates a new dispatch event referencing the same `occurrence_id` and marks `replay=true`; it does not create a new Occurrence.
+
+### Dispatch Decision Matrix
+
+| Outcome | Action |
+| --- | --- |
+| durable acceptance proven | mark `ACCEPTED` |
+| non-acceptance proven and retriable | return to `PENDING` with backoff |
+| acknowledgement outcome ambiguous | retry same logical Occurrence under duplicate-safe adapter contract |
+| poison/schema/unroutable permanent error | `PARKED` |
+| operator redrive | new outbox intent, same `occurrence_id`, reason/evidence required |
+
+RabbitMQ/Kafka ambiguity is duplicate-safe because every retry preserves `occurrence_id` and consumers dedupe it. Direct is eligible only when the registered target durably deduplicates the same identity.
 
 ## Configuration
 

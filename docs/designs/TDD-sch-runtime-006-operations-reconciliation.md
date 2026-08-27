@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-006
   title: Scheduling Operations and Reconciliation
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Scheduling Operations and Reconciliation
 
@@ -70,6 +70,19 @@ Reconciliation checks:
 6. stale in-flight leases are recoverable
 
 Replay creates a new publication intent referencing the same Occurrence and records replay generation/reason. It does not alter `scheduled_for`.
+
+### Repair Contract
+
+| Finding | Supported action |
+| --- | --- |
+| expired `IN_FLIGHT` outbox lease | return to `PENDING` preserving attempt evidence |
+| `PARKED` outbox | no automatic redrive |
+| active-count drift | recalculate scoped counter from authoritative Schedules |
+| accepted outbox but Occurrence not accepted | repair projection from accepted outbox evidence |
+| missing outbox for committed pending Occurrence | create one replacement intent only when evidence proves it is missing |
+| temporal inconsistency | report only; never rewrite Schedule policy automatically |
+
+Every mutating repair records pre/post state hashes, finding code, actor/service identity, reason, and reconciliation run ID.
 
 ## Configuration
 
@@ -134,6 +147,10 @@ Tests inject:
 Runbooks cover DB failover, broker outage, relay backlog, due-lateness breach, tzdata compatibility rollout, stuck reconciliation, quota saturation, and target disablement.
 
 The platform is not labeled battle-tested until fault/load exercises and production SLO evidence validate these runbooks.
+
+### Backup and Restore Acceptance
+
+A restore is healthy only after Schedule/idempotency/Occurrence/outbox reconciliation, pending/parked discovery, target/quota projection verification, preserved `occurrence_id` replay, and measured RPO/RTO. At least one production-like restore drill is required before calling the platform operationally mature.
 
 ## Traceability
 

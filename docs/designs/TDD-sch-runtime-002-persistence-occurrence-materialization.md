@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-002
   title: Scheduling Persistence and Occurrence Materialization
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Scheduling Persistence and Occurrence Materialization
 
@@ -102,7 +102,7 @@ CREATE TABLE occurrences (
   time_zone text NULL,
   tzdata_version text NULL,
   materialized_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-  dispatch_state text NOT NULL CHECK (dispatch_state IN ('PENDING','ACCEPTED')),
+  dispatch_state text NOT NULL CHECK (dispatch_state IN ('PENDING','ACCEPTED','PARKED')),
   dispatched_at timestamptz NULL,
   UNIQUE (schedule_id, scheduled_for)
 );
@@ -113,16 +113,18 @@ CREATE TABLE scheduling_outbox (
   aggregate_id uuid NOT NULL,
   event_type text NOT NULL,
   payload jsonb NOT NULL,
-  state text NOT NULL CHECK (state IN ('PENDING','IN_FLIGHT','ACCEPTED')),
+  state text NOT NULL CHECK (state IN ('PENDING','IN_FLIGHT','ACCEPTED','PARKED')),
   attempt_count integer NOT NULL DEFAULT 0,
   available_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   lease_until timestamptz NULL,
   accepted_at timestamptz NULL,
+  parked_at timestamptz NULL,
+  park_reason text NULL,
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
 CREATE INDEX scheduling_outbox_pending_idx
   ON scheduling_outbox (available_at, created_at)
-  WHERE state <> 'ACCEPTED';
+  WHERE state IN ('PENDING','IN_FLIGHT');
 ```
 
 The schema requires PostgreSQL 15+ semantics for `UNIQUE NULLS NOT DISTINCT`, allowing non-Tenant idempotency without a magic sentinel Tenant identifier.
@@ -176,6 +178,14 @@ For each locked Schedule inside the same transaction:
 The unique `(schedule_id, scheduled_for)` constraint is the final duplicate-creation guard.
 
 Pause/update/cancel takes the same Schedule row lock. Therefore the transaction commit order implements the SAD linearization rule without a separate distributed lock.
+
+### Transaction and Lock Ordering
+
+Authoritative lock order is: quota/fairness bucket when a hard quota is consumed, then Schedule row, then newly created Occurrence/outbox rows. Relay never locks a Schedule while holding an outbox lease. Reconciliation follows the same order in bounded pages.
+
+### Schema Evolution Contract
+
+Production migrations use expand/backfill/verify/contract sequencing. Rolling releases must remain compatible with both old and expanded schemas. Destructive rename/drop and enum contraction never occur in the same release that stops reading the old representation.
 
 ## Configuration
 

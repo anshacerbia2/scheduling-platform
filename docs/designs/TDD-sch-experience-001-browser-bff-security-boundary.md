@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-experience-001
   title: Scheduling Experience Browser and BFF Security Boundary
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-014
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Scheduling Experience Browser and BFF Security Boundary
 
@@ -48,6 +48,10 @@ The browser receives a per-session CSRF token through a same-origin bootstrap re
 Session state contains opaque session ID, Principal ID, delegated token material or token handle held server-side, assurance level, current application/Tenant context, creation/last-use/expiry, CSRF secret hash, and token-expiry metadata.
 
 Context switch increments `context_generation`. Every pending mutation and query cache key is bound to that generation.
+
+### Production Session Store Contract
+
+Production sessions are server-side and shared across BFF replicas; process-local memory is development-only. The store provides atomic create, read-and-touch, rotate, revoke/delete, idle expiry, and absolute expiry. A BFF process loss must not terminate unaffected sessions, and explicit logout/revocation/context invalidation must propagate to all replicas within 5 seconds. Delegated token material or token handles are protected at rest. The session store is not an authorization authority.
 
 ## API / Interface
 

@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-005
   title: Scheduling Target Registry, Admission, and Quota
   owner: Scheduling Platform Team
-  version: 1.0.0
+  version: 1.1.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-27
+  last_reviewed: 2026-08-28
 ---
 # Scheduling Target Registry, Admission, and Quota
 
@@ -79,6 +79,20 @@ CREATE TABLE schedule_quota_usage_minute (
 
 Active Schedule count is maintained transactionally on lifecycle changes in a compact quota counter, with reconciliation against authoritative Schedule rows.
 
+The compact active-count authority is:
+
+```sql
+CREATE TABLE schedule_quota_counters (
+  application_id uuid NOT NULL,
+  tenant_id uuid NULL,
+  active_schedules bigint NOT NULL CHECK (active_schedules >= 0),
+  updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+  UNIQUE NULLS NOT DISTINCT (application_id, tenant_id)
+);
+```
+
+The counter is transactionally updated when schedules enter or leave active cardinality and is periodically reconciled against authoritative Schedule rows.
+
 ## API / Interface
 
 Internal ports:
@@ -105,7 +119,7 @@ Create admission:
 4. Create Schedule
 5. Increment active count on successful commit
 
-Due fairness exposes `eligible_schedule_scopes` to the due-claim query. A scope is eligible only while its current due-rate budget and per-sweep fairness budget remain available. Materializing an Occurrence increments the scope's due bucket in the same authoritative transaction, so concurrent replicas cannot exceed the hard due budget through a check-then-act race. Relay workers additionally enforce bounded per-scope concurrency. The system never lets one scope occupy all claim or relay capacity.
+Due fairness exposes `eligible_schedule_scopes` to the due-claim query. A scope is eligible only while its current due-rate budget and per-sweep fairness budget remain available. Materializing an Occurrence atomically consumes the scope's due bucket in the same authoritative transaction with a conditional increment (`UPDATE/UPSERT ... WHERE dues < due_limit RETURNING`). No returned row means the scope is no longer eligible for that minute. Concurrent replicas therefore cannot exceed the hard due budget through a check-then-act race. Relay workers additionally enforce bounded per-scope concurrency. The system never lets one scope occupy all claim or relay capacity.
 
 Under saturation, degradation order is:
 
