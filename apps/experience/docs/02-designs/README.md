@@ -1,5 +1,8 @@
 # Scheduling Experience Technical Design Documents
 
-This directory contains TDDs whose `parent_sad` is the SAD governing this System/deployable.
+Parent SAD: `SAD-014`
 
-Designs from other Systems in the repository must not be placed here.
+- `TDD-sch-experience-001-browser-bff-security-boundary.md`
+- `TDD-sch-experience-002-scheduling-operations-ui.md`
+
+Only designs owned by Scheduling Experience belong in this directory.
