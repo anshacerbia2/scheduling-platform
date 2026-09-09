@@ -1,0 +1,48 @@
+name: Complete tzdata pin contract
+
+on:
+  push:
+    branches: [arch/sync-sad-013-v2.2]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: arch/sync-sad-013-v2.2
+      - shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('docs/designs/TDD-sch-runtime-001-schedule-lifecycle-temporal-engine.md')
+          s = p.read_text()
+          old = '| `tzdata_compatibility_policy` | `FOLLOW_CURRENT` by default; bounded `PIN_UNTIL` only under an explicit compatibility window |'
+          new = old + '\n| `tzdata_pinned_version` | Required only for `PIN_UNTIL`; exact IANA tzdata version preserved through the bounded pin window |\n| `tzdata_pin_until` | Required expiry/review instant for `PIN_UNTIL`; indefinite pinning is prohibited |'
+          assert old in s
+          s = s.replace(old, new, 1)
+          old2 = 'A bounded `PIN_UNTIL` policy may preserve the previously declared tzdata behavior only through an explicit expiry/review window; indefinite civil-time pinning is prohibited.'
+          new2 = 'A bounded `PIN_UNTIL` policy preserves the explicitly stored `tzdata_pinned_version` only through `tzdata_pin_until`; both fields are required for that policy, and indefinite civil-time pinning is prohibited.'
+          assert old2 in s
+          p.write_text(s.replace(old2, new2, 1))
+
+          p = Path('docs/designs/TDD-sch-runtime-002-persistence-occurrence-materialization.md')
+          s = p.read_text()
+          old = "  tzdata_compatibility_policy text NOT NULL DEFAULT 'FOLLOW_CURRENT',\n  tzdata_pin_until timestamptz NULL,"
+          new = "  tzdata_compatibility_policy text NOT NULL DEFAULT 'FOLLOW_CURRENT',\n  tzdata_pinned_version text NULL,\n  tzdata_pin_until timestamptz NULL,"
+          assert old in s
+          s = s.replace(old, new, 1)
+          old2 = 'Schedule-bound Target Contract/version, resolved Scheduling Service Class, and tzdata compatibility policy are persisted so later registry/configuration changes cannot rewrite historical materialization semantics.'
+          new2 = 'Schedule-bound Target Contract/version, resolved Scheduling Service Class, and tzdata compatibility policy are persisted so later registry/configuration changes cannot rewrite historical materialization semantics. `PIN_UNTIL` requires both `tzdata_pinned_version` and `tzdata_pin_until`; `FOLLOW_CURRENT` requires both to be null.'
+          assert old2 in s
+          p.write_text(s.replace(old2, new2, 1))
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/designs/TDD-sch-runtime-001-schedule-lifecycle-temporal-engine.md docs/designs/TDD-sch-runtime-002-persistence-occurrence-materialization.md
+          git commit -m 'docs(runtime): make bounded tzdata pin reproducible'
+          git push origin HEAD:arch/sync-sad-013-v2.2
