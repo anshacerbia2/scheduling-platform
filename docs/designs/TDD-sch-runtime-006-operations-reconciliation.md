@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-006
   title: Scheduling Operations and Reconciliation
   owner: Scheduling Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Scheduling Operations and Reconciliation
 
@@ -39,12 +39,13 @@ Operational evidence references:
 - Occurrence ID/scheduled_for/materialized_at
 - dispatch attempts and durability point
 - outbox state/age
-- target/projection version
+- target contract ID/version, lifecycle state, replacement/grandfather status, and projection version
+- Scheduling Service Class
 - recurrence/DST/tzdata evidence
 - replay generation/reason/operator
 - reconciliation run ID and findings
 
-Reconciliation findings use stable codes such as `OUTBOX_MISSING`, `OCCURRENCE_PENDING_TOO_LONG`, `SCHEDULE_NEXT_DUE_INCONSISTENT`, and `QUOTA_COUNTER_DRIFT`.
+Reconciliation findings use stable codes such as `OUTBOX_MISSING`, `OCCURRENCE_PENDING_TOO_LONG`, `SCHEDULE_NEXT_DUE_INCONSISTENT`, `QUOTA_COUNTER_DRIFT`, `TARGET_DEPRECATED_BINDING`, `TARGET_RETIREMENT_BLOCKED`, and `SERVICE_CLASS_POLICY_DRIFT`.
 
 ## API / Interface
 
@@ -55,6 +56,7 @@ Privileged endpoints:
 - `POST /v1/occurrences/{id}:replay`
 - `POST /v1/operations/outbox/{id}:retry` for known-safe unpublished state
 - read-only health/backlog endpoints consumed by Experience BFF
+- `GET /v1/operations/target-bindings` to inventory active Schedule bindings for a target contract/version before retirement
 
 No endpoint can fabricate a new Occurrence to repair a dispatch problem.
 
@@ -68,6 +70,8 @@ Reconciliation checks:
 4. active Schedule next due is calculator-consistent within its policy version
 5. active-count quota counters reconcile to authoritative state
 6. stale in-flight leases are recoverable
+7. every `DEPRECATED`/retiring Target Contract has an inventory of active bound Schedules and an owner-visible disposition (`REBIND`, `CANCEL`, or bounded `GRANDFATHER`)
+8. persisted Schedule/Occurrence service class matches the authorized registered Target profile unless an explicit migration record exists
 
 Replay creates a new publication intent referencing the same Occurrence and records replay generation/reason. It does not alter `scheduled_for`.
 
@@ -81,6 +85,8 @@ Replay creates a new publication intent referencing the same Occurrence and reco
 | accepted outbox but Occurrence not accepted | repair projection from accepted outbox evidence |
 | missing outbox for committed pending Occurrence | create one replacement intent only when evidence proves it is missing |
 | temporal inconsistency | report only; never rewrite Schedule policy automatically |
+| target retirement blocked | inventory bound Schedules and require owner `REBIND`, `CANCEL`, or bounded `GRANDFATHER`; never silently redirect |
+| service-class policy drift | block new escalation, report existing mismatch, and migrate only through explicit versioned policy |
 
 Every mutating repair records pre/post state hashes, finding code, actor/service identity, reason, and reconciliation run ID.
 
@@ -103,7 +109,7 @@ Replay, repair, quota override, target change, and cross-Tenant reconciliation r
 
 Reconciliation itself never holds long locks or performs unbounded scans. A failed repair leaves authoritative state unchanged unless its local transaction commits. Unsupported inconsistency is escalated rather than fixed by ad-hoc SQL.
 
-A declared broker outage suppresses duplicate symptoms but does not suppress source outbox growth/storage safety alerts.
+A declared broker outage suppresses duplicate symptoms but does not suppress source outbox growth/storage safety alerts. Target retirement reconciliation is lower priority than due dispatch but must complete before a non-grandfathered target version can become operationally retired.
 
 ## Observability
 
@@ -135,6 +141,8 @@ Tests inject:
 - stale relay leases
 - quota counter drift
 - target projection staleness
+- target deprecation/retirement inventory, rebind/cancel/grandfather flows, and no-silent-redirect proof
+- service-class drift and saturation fairness evidence
 - replay under duplicate delivery
 - cross-Tenant authorization failures
 - reconciliation process crashes
@@ -144,7 +152,7 @@ Tests inject:
 
 ## Operational Notes
 
-Runbooks cover DB failover, broker outage, relay backlog, due-lateness breach, tzdata compatibility rollout, stuck reconciliation, quota saturation, and target disablement.
+Runbooks cover DB failover, broker outage, relay backlog, due-lateness breach, tzdata compatibility rollout, stuck reconciliation, quota/service-class saturation, Target Contract deprecation/retirement/rebind, and target disablement.
 
 The platform is not labeled battle-tested until fault/load exercises and production SLO evidence validate these runbooks.
 
@@ -154,4 +162,4 @@ A restore is healthy only after Schedule/idempotency/Occurrence/outbox reconcili
 
 ## Traceability
 
-Implements SAD-013 Operations & Reconciliation and NFR sections. Conforms to PAD-PLT-011 §6 and STD-GLB-010 §3.12. Replay dispatch is TDD-004; persistence invariants are TDD-002.
+Implements SAD-013 v2.2 Operations & Reconciliation, Target Contract retirement, service-class observability, and NFR sections. Conforms to PAD-PLT-011 §6 and STD-GLB-010 §3.12. Replay dispatch is TDD-004; persistence invariants are TDD-002.

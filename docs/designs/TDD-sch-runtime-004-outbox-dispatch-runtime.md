@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-004
   title: Scheduling Outbox and Dispatch Runtime
   owner: Scheduling Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Scheduling Outbox and Dispatch Runtime
 
@@ -67,14 +67,15 @@ Logical CloudEvent data:
     "scheduled_for": "...",
     "application_id": "...",
     "tenant_id": "...",
-    "target": {"contract": "...", "version": 1},
+    "target": {"contract_id": "...", "contract_version": 1},
+    "service_class": "C2",
     "correlation_id": "...",
     "trigger": {}
   }
 }
 ```
 
-`dispatch_event_id` identifies one publication attempt/event; `occurrence_id` remains stable across retries and replay.
+`dispatch_event_id` identifies one publication attempt/event; `occurrence_id` remains stable across retries and replay. Target contract/version and service class come from immutable Occurrence evidence created during materialization; the relay may resolve current operational route metadata for that exact registered contract/version but cannot silently substitute a semantically different target version.
 
 ## API / Interface
 
@@ -101,7 +102,7 @@ Kafka:
 - schema-compatible payload
 
 Direct:
-- POST to registered target acceptance URL from target registry
+- POST to the operational route resolved for the immutable registered target contract/version carried by the Occurrence
 - `Idempotency-Key: <occurrence_id>`
 - success only after target persisted/deduplicated the occurrence
 
@@ -109,7 +110,7 @@ Direct:
 
 Relay claim:
 
-1. Claim bounded `PENDING`/expired `IN_FLIGHT` rows with `FOR UPDATE SKIP LOCKED`
+1. Claim bounded `PENDING`/expired `IN_FLIGHT` rows with `FOR UPDATE SKIP LOCKED`, respecting the authorized service-class concurrency/fairness envelope
 2. Set `IN_FLIGHT`, increment attempt, set lease, commit
 3. Publish outside the DB transaction
 4. On durable acceptance, mark outbox and Occurrence accepted
@@ -149,7 +150,7 @@ Startup fails if more than one primary profile is enabled for `OccurrenceDue`.
 
 ## Security Notes
 
-Dispatch credentials come from secret delivery and are never persisted in Schedule/Occurrence/outbox payloads. Target routes are resolved from registered target metadata, not Schedule input. TLS and authenticated workload identity are mandatory outside local development.
+Dispatch credentials come from secret delivery and are never persisted in Schedule/Occurrence/outbox payloads. Target routes are resolved from registered target metadata for the exact immutable contract/version carried by the Occurrence, not from Schedule input and not by silently following a replacement version. TLS and authenticated workload identity are mandatory outside local development.
 
 Broker administrative APIs are not exposed through Scheduling Control API.
 
@@ -185,6 +186,8 @@ Profile contract suite runs identically against Direct, RabbitMQ, and Kafka:
 - broker/target outage
 - process kill before/after publish
 - duplicate publish preserving `occurrence_id`
+- target-contract/version immutability across registry deprecation/replacement
+- service-class dispatch fairness without starvation
 - unroutable/poison message
 - lease expiry
 - replay identity
@@ -199,4 +202,4 @@ Dashboards distinguish source outbox backlog from broker/target backlog. Switchi
 
 ## Traceability
 
-Implements SAD-013 Outbox Relay, Occurrence Dispatch Port, and dispatch adapters. Conforms to ADR-SCH-002 §§5.3-5.6 and STD-GLB-010 §§3.5-3.6, 3.11. Source outbox insertion is TDD-002.
+Implements SAD-013 v2.2 Outbox Relay, immutable Target Contract dispatch, Scheduling Service Class dispatch envelope, Occurrence Dispatch Port, and adapters. Conforms to ADR-SCH-002 §§5.3-5.6 and STD-GLB-010 §§3.5-3.6, 3.11. Source outbox insertion is TDD-002.

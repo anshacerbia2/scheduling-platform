@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-002
   title: Scheduling Persistence and Occurrence Materialization
   owner: Scheduling Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Scheduling Persistence and Occurrence Materialization
 
@@ -53,6 +53,10 @@ CREATE TABLE schedules (
   application_id uuid NOT NULL,
   tenant_id uuid NULL,
   target_id uuid NOT NULL,
+  target_contract_id text NOT NULL,
+  target_contract_version integer NOT NULL CHECK (target_contract_version > 0),
+  target_compatibility_policy text NOT NULL,
+  service_class text NOT NULL CHECK (service_class IN ('C1','C2','C3')),
   schedule_version bigint NOT NULL CHECK (schedule_version > 0),
   state text NOT NULL CHECK (state IN ('ACTIVE','PAUSED','COMPLETED','CANCELLED')),
   schedule_type text NOT NULL CHECK (schedule_type IN ('ONE_TIME','RECURRING')),
@@ -62,6 +66,9 @@ CREATE TABLE schedules (
   recurrence_semantics_version text NOT NULL,
   time_zone text NULL,
   dst_policy_version text NOT NULL,
+  tzdata_compatibility_policy text NOT NULL DEFAULT 'FOLLOW_CURRENT',
+  tzdata_pinned_version text NULL,
+  tzdata_pin_until timestamptz NULL,
   dst_nonexistent text NULL,
   dst_ambiguous text NULL,
   misfire_policy text NULL,
@@ -101,6 +108,9 @@ CREATE TABLE occurrences (
   dst_policy_version text NOT NULL,
   time_zone text NULL,
   tzdata_version text NULL,
+  target_contract_id text NOT NULL,
+  target_contract_version integer NOT NULL CHECK (target_contract_version > 0),
+  service_class text NOT NULL CHECK (service_class IN ('C1','C2','C3')),
   materialized_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   dispatch_state text NOT NULL CHECK (dispatch_state IN ('PENDING','ACCEPTED','PARKED')),
   dispatched_at timestamptz NULL,
@@ -129,7 +139,7 @@ CREATE INDEX scheduling_outbox_pending_idx
 
 The schema requires PostgreSQL 15+ semantics for `UNIQUE NULLS NOT DISTINCT`, allowing non-Tenant idempotency without a magic sentinel Tenant identifier.
 
-Production RLS policies scope `schedules`, `occurrences`, and command-recovery views to authenticated application/Tenant context. Internal due/outbox roles use narrowly privileged bypass roles unavailable to API callers.
+Production RLS policies scope `schedules`, `occurrences`, and command-recovery views to authenticated application/Tenant context. Internal due/outbox roles use narrowly privileged bypass roles unavailable to API callers. Schedule-bound Target Contract/version, resolved Scheduling Service Class, and tzdata compatibility policy are persisted so later registry/configuration changes cannot rewrite historical materialization semantics. `PIN_UNTIL` requires both `tzdata_pinned_version` and `tzdata_pin_until`; `FOLLOW_CURRENT` requires both to be null.
 
 ## API / Interface
 
@@ -148,7 +158,7 @@ The materializer receives a locked Schedule and must complete all occurrence/adv
 
 ## Algorithms / Logic
 
-The physical due query includes the eligibility predicate supplied by TDD-005 so scopes that have exhausted their due-rate/fairness budget are not repeatedly selected ahead of other scopes. The core locking shape is:
+The physical due query includes the eligibility predicate supplied by TDD-005 so scopes that have exhausted their due-rate/fairness budget are not repeatedly selected ahead of other scopes. Eligibility incorporates application/Tenant quotas and bounded Scheduling Service Class fairness/reservations; caller-controlled arbitrary priorities are never part of the claim predicate. The core locking shape is:
 
 ```sql
 SELECT s.*
@@ -170,10 +180,11 @@ For each locked Schedule inside the same transaction:
 
 1. Re-evaluate due state from persisted version and database transaction time
 2. Apply misfire policy using the pure calculator
-3. Insert each permitted Occurrence with UUIDv7
-4. Insert one `occurrence.due` outbox record per Occurrence
-5. Advance `next_due_at`, or mark one-time Schedule `COMPLETED`
-6. Commit
+3. Resolve and copy the Schedule-bound immutable target contract/version and authorized service class into each Occurrence
+4. Insert each permitted Occurrence with UUIDv7
+5. Insert one `occurrence.due` outbox record per Occurrence
+6. Advance `next_due_at`, or mark one-time Schedule `COMPLETED`
+7. Commit
 
 The unique `(schedule_id, scheduled_for)` constraint is the final duplicate-creation guard.
 
@@ -243,6 +254,8 @@ Blocking integration tests run against production-equivalent PostgreSQL:
 - one-time completion
 - RLS isolation under runtime API role
 - migration/runtime role privilege separation
+- immutable target-contract/version propagation from Schedule to Occurrence/outbox
+- service-class fairness eligibility under concurrent replicas
 - index-plan assertions for due and outbox scans
 - database restart/failover recovery
 - 10x forecast load and lock-contention profiling
@@ -255,4 +268,4 @@ Backups include Schedule, Occurrence, idempotency, and outbox state. HA commit a
 
 ## Traceability
 
-Implements SAD-013 State & Data Architecture and Due Claimer/Occurrence Materializer modules. Conforms to PAD-PLT-011, ADR-SCH-002 §§5.1-5.2, and STD-GLB-010 §§3.5, 3.8, 3.11. Temporal rules come from TDD-001; publication relay is TDD-004.
+Implements SAD-013 v2.2 State & Data Architecture, Target Contract binding persistence, and Due Claimer/Occurrence Materializer modules. Conforms to PAD-PLT-011, ADR-SCH-002 §§5.1-5.2, and STD-GLB-010 §§3.5, 3.8, 3.11. Temporal rules come from TDD-001; publication relay is TDD-004.
