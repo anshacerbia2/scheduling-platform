@@ -3,13 +3,13 @@ doc_meta:
   id: TDD-sch-runtime-001
   title: Schedule Lifecycle and Temporal Engine
   owner: Scheduling Platform Team
-  version: 1.1.0
+  version: 1.2.0
   status: approved
   classification: restricted
   parent_sad: SAD-013
   review_cycle_days: 180
   created_date: 2026-08-27
-  last_reviewed: 2026-08-28
+  last_reviewed: 2026-09-09
 ---
 # Schedule Lifecycle and Temporal Engine
 
@@ -93,6 +93,7 @@ The aggregate exposes these immutable/versioned fields to persistence:
 | `dst_nonexistent` | `SKIP` or `SHIFT_FORWARD` |
 | `dst_ambiguous` | `EARLIER_OFFSET` or `LATER_OFFSET` |
 | `misfire_policy` | recurring: `SKIP`, `FIRE_ONCE`, `CATCH_UP_BOUNDED` |
+| `tzdata_compatibility_policy` | `FOLLOW_CURRENT` by default; bounded `PIN_UNTIL` only under an explicit compatibility window |
 | `one_time_misfire_policy` | `SKIP` or `FIRE_ONCE` |
 | `max_catch_up` | required only for `CATCH_UP_BOUNDED`, 1..100 |
 | `next_due_at` | next canonical UTC candidate |
@@ -165,7 +166,7 @@ Ownership and authorization are enforced by the Control API TDD; the domain acce
 
 A calculation failure does not partially mutate the Schedule. Unsupported recurrence syntax, invalid timezone, impossible policy combination, or preview overflow returns a deterministic validation error.
 
-A tzdata upgrade that changes future computed UTC instants is a compatibility event. Deployment is blocked until the golden corpus and differential comparison identify the affected Schedule versions and the rollout evidence is accepted.
+A tzdata upgrade that changes future computed UTC instants is a compatibility event. Deployment is blocked until the golden corpus and differential comparison identify the affected Schedule versions and the rollout evidence is accepted. Materialized Occurrences are immutable and never recomputed. For future non-materialized instants, `FOLLOW_CURRENT` recomputes under the promoted governed tzdata while preserving Schedule semantic/DST versions as evidence. A bounded `PIN_UNTIL` policy may preserve the previously declared tzdata behavior only through an explicit expiry/review window; indefinite civil-time pinning is prohibited.
 
 ## Observability
 
@@ -200,15 +201,16 @@ Blocking tests include:
 - pause/resume/update/cancel state transitions
 - stale `ExpectedVersion`
 - mutation versus materialization race contract
-- tzdata upgrade golden/differential corpus
+- tzdata upgrade golden/differential corpus, including `FOLLOW_CURRENT` recomputation and bounded `PIN_UNTIL` behavior
+- proof that materialized Occurrences are never rewritten by tzdata promotion
 - fuzz tests for recurrence parser normalization and bounded complexity
 
 ## Operational Notes
 
-Operators can preview the exact future instants and the policy/tzdata evidence that produced them. Existing Schedule versions are never silently reinterpreted during incident repair.
+Operators can preview the exact future instants, `tzdata_compatibility_policy`, and the policy/tzdata evidence that produced them. Existing Schedule versions are never silently reinterpreted during incident repair.
 
 If a future requirement needs sub-second precision, alternate calendar semantics, or regional temporal authority, it requires an explicit architecture profile rather than extending `scnehaux-rfc5545-v1` incompatibly.
 
 ## Traceability
 
-Implements SAD-013 Temporal Calculator and Schedule Domain. Conforms to PAD-PLT-011, STD-GLB-010 §§3.3-3.8, and ADR-SCH-002 §§5.1, 5.2, and 5.7. Persistence linearization is realized by `TDD-sch-runtime-002`; HTTP mutation semantics are realized by `TDD-sch-runtime-003`.
+Implements SAD-013 v2.2 Temporal Calculator, Schedule lifecycle, and tzdata compatibility behavior. Conforms to PAD-PLT-011, STD-GLB-010 §§3.3-3.8, and ADR-SCH-002 §§5.1, 5.2, and 5.7. Persistence linearization is realized by `TDD-sch-runtime-002`; HTTP mutation semantics are realized by `TDD-sch-runtime-003`.
