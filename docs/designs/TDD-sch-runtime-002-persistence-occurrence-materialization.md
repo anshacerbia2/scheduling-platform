@@ -67,6 +67,7 @@ CREATE TABLE schedules (
   time_zone text NULL,
   dst_policy_version text NOT NULL,
   tzdata_compatibility_policy text NOT NULL DEFAULT 'FOLLOW_CURRENT',
+  tzdata_pinned_version text NULL,
   tzdata_pin_until timestamptz NULL,
   dst_nonexistent text NULL,
   dst_ambiguous text NULL,
@@ -138,7 +139,7 @@ CREATE INDEX scheduling_outbox_pending_idx
 
 The schema requires PostgreSQL 15+ semantics for `UNIQUE NULLS NOT DISTINCT`, allowing non-Tenant idempotency without a magic sentinel Tenant identifier.
 
-Production RLS policies scope `schedules`, `occurrences`, and command-recovery views to authenticated application/Tenant context. Internal due/outbox roles use narrowly privileged bypass roles unavailable to API callers. Schedule-bound Target Contract/version, resolved Scheduling Service Class, and tzdata compatibility policy are persisted so later registry/configuration changes cannot rewrite historical materialization semantics.
+Production RLS policies scope `schedules`, `occurrences`, and command-recovery views to authenticated application/Tenant context. Internal due/outbox roles use narrowly privileged bypass roles unavailable to API callers. Schedule-bound Target Contract/version, resolved Scheduling Service Class, and tzdata compatibility policy are persisted so later registry/configuration changes cannot rewrite historical materialization semantics. `PIN_UNTIL` requires both `tzdata_pinned_version` and `tzdata_pin_until`; `FOLLOW_CURRENT` requires both to be null.
 
 ## API / Interface
 

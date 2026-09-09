@@ -94,6 +94,8 @@ The aggregate exposes these immutable/versioned fields to persistence:
 | `dst_ambiguous` | `EARLIER_OFFSET` or `LATER_OFFSET` |
 | `misfire_policy` | recurring: `SKIP`, `FIRE_ONCE`, `CATCH_UP_BOUNDED` |
 | `tzdata_compatibility_policy` | `FOLLOW_CURRENT` by default; bounded `PIN_UNTIL` only under an explicit compatibility window |
+| `tzdata_pinned_version` | Required only for `PIN_UNTIL`; exact IANA tzdata version preserved through the bounded pin window |
+| `tzdata_pin_until` | Required expiry/review instant for `PIN_UNTIL`; indefinite pinning is prohibited |
 | `one_time_misfire_policy` | `SKIP` or `FIRE_ONCE` |
 | `max_catch_up` | required only for `CATCH_UP_BOUNDED`, 1..100 |
 | `next_due_at` | next canonical UTC candidate |
@@ -166,7 +168,7 @@ Ownership and authorization are enforced by the Control API TDD; the domain acce
 
 A calculation failure does not partially mutate the Schedule. Unsupported recurrence syntax, invalid timezone, impossible policy combination, or preview overflow returns a deterministic validation error.
 
-A tzdata upgrade that changes future computed UTC instants is a compatibility event. Deployment is blocked until the golden corpus and differential comparison identify the affected Schedule versions and the rollout evidence is accepted. Materialized Occurrences are immutable and never recomputed. For future non-materialized instants, `FOLLOW_CURRENT` recomputes under the promoted governed tzdata while preserving Schedule semantic/DST versions as evidence. A bounded `PIN_UNTIL` policy may preserve the previously declared tzdata behavior only through an explicit expiry/review window; indefinite civil-time pinning is prohibited.
+A tzdata upgrade that changes future computed UTC instants is a compatibility event. Deployment is blocked until the golden corpus and differential comparison identify the affected Schedule versions and the rollout evidence is accepted. Materialized Occurrences are immutable and never recomputed. For future non-materialized instants, `FOLLOW_CURRENT` recomputes under the promoted governed tzdata while preserving Schedule semantic/DST versions as evidence. A bounded `PIN_UNTIL` policy preserves the explicitly stored `tzdata_pinned_version` only through `tzdata_pin_until`; both fields are required for that policy, and indefinite civil-time pinning is prohibited.
 
 ## Observability
 
